@@ -235,10 +235,6 @@ IDLE_REASONS = [
     "Scheduled Rest", "Other"
 ]
 
-# Initialize session state for form values
-if 'vehicle_data' not in st.session_state:
-    st.session_state.vehicle_data = {}
-
 # Form
 with st.form("multi_vehicle_log_form", clear_on_submit=True):
     
@@ -254,7 +250,7 @@ with st.form("multi_vehicle_log_form", clear_on_submit=True):
     
     # Default Project and Description
     st.subheader("🏗️ Default Values (Optional)")
-    st.caption("💡 Set these to auto-fill all vehicles. Override per vehicle if needed.")
+    st.caption("💡 Set these to auto-fill all vehicles. You can edit per vehicle if needed.")
     
     col_default1, col_default2 = st.columns(2)
     
@@ -272,26 +268,26 @@ with st.form("multi_vehicle_log_form", clear_on_submit=True):
                 default_project = st.selectbox(
                     "Default Project Site",
                     options=[""] + existing_projects,
-                    help="Select if most vehicles worked on same project"
+                    help="Will auto-fill all vehicles"
                 )
             else:
                 default_project = st.text_input(
                     "Default Project Site",
                     placeholder="e.g., Highway NH-30 Extension",
-                    help="Enter new project name"
+                    help="Will auto-fill all vehicles"
                 )
         else:
             default_project = st.text_input(
                 "Default Project Site",
                 placeholder="e.g., Highway NH-30 Extension",
-                help="Enter project name"
+                help="Will auto-fill all vehicles"
             )
     
     with col_default2:
         default_description = st.text_area(
             "Default Work Description",
             placeholder="e.g., Excavation and material transport",
-            help="Common work description for all vehicles",
+            help="Will auto-fill all vehicles",
             height=100
         )
     
@@ -301,63 +297,62 @@ with st.form("multi_vehicle_log_form", clear_on_submit=True):
     st.subheader("🚛 Vehicle Entries")
     st.caption(f"📋 {len(master_vehicles)} vehicles loaded. Expand cards to fill details.")
     
-    # Help message about entry creation
-    with st.expander("ℹ️ How entries are created", expanded=False):
-        st.markdown("""
-        **An entry is created for a vehicle when:**
-        - ✅ **Work Amount > 0** (vehicle worked and has billable amount), OR
-        - ✅ **Vehicle marked as Idle** AND idle reason selected
-        
-        **An entry is NOT created when:**
-        - ❌ Card left empty or collapsed
-        - ❌ Work Amount = 0 and not marked idle
-        - ❌ Marked idle but no reason selected
-        
-        💡 **Tip:** Fill only the vehicles you actually used today!
-        """)
-    
-    vehicle_entries = []
-    
     for idx, vehicle in enumerate(master_vehicles):
         vehicle_name = vehicle["name"]
         default_driver = vehicle.get("default_driver", "")
         
         with st.expander(f"🚛 **{vehicle_name}**", expanded=False):
             
-            # Vehicle status checkboxes
-            col_status1, col_status2 = st.columns(2)
-            
-            with col_status1:
-                vehicle_idle = st.checkbox(
-                    "🛑 Vehicle Idle",
-                    key=f"idle_{idx}",
-                    help="Check if vehicle was idle/not working today"
-                )
+            # Vehicle idle checkbox
+            vehicle_idle = st.checkbox(
+                "🛑 Vehicle Idle",
+                key=f"idle_{idx}",
+                help="Check if vehicle was idle/not working today"
+            )
             
             # If vehicle is idle, show idle-specific fields
             if vehicle_idle:
                 st.markdown("**🛑 Idle Vehicle Details**")
                 
                 idle_reason = st.selectbox(
-                    "Idle Reason",
+                    "Idle Reason *",
                     options=[""] + IDLE_REASONS,
                     key=f"idle_reason_{idx}"
                 )
                 
                 if idle_reason == "Other":
                     idle_reason_other = st.text_input(
-                        "Specify Reason",
+                        "Specify Reason *",
                         key=f"idle_reason_other_{idx}",
                         placeholder="e.g., Festival holiday"
                     )
-                    final_idle_reason = idle_reason_other
                 else:
-                    final_idle_reason = idle_reason
+                    idle_reason_other = ""
                 
                 idle_notes = st.text_area(
                     "Idle Notes (optional)",
                     key=f"idle_notes_{idx}",
                     placeholder="Additional details...",
+                    height=80
+                )
+                
+                # Project and description greyed out (disabled)
+                st.markdown("**🏗️ Project Site** (N/A - Vehicle Idle)")
+                st.text_input(
+                    "Project (disabled)",
+                    value="N/A - Vehicle Idle",
+                    disabled=True,
+                    key=f"idle_project_{idx}",
+                    label_visibility="collapsed"
+                )
+                
+                st.markdown("**📝 Work Description** (N/A - Vehicle Idle)")
+                st.text_area(
+                    "Description (disabled)",
+                    value=f"Vehicle Idle - {idle_reason if idle_reason and idle_reason != 'Other' else idle_reason_other}",
+                    disabled=True,
+                    key=f"idle_desc_{idx}",
+                    label_visibility="collapsed",
                     height=80
                 )
                 
@@ -379,26 +374,6 @@ with st.form("multi_vehicle_log_form", clear_on_submit=True):
                         key=f"idle_maintenance_{idx}",
                         help="Optional - if maintenance done"
                     )
-                
-                # Store idle vehicle data
-                if idle_reason:  # Only if idle reason is selected
-                    vehicle_entries.append({
-                        "vehicle_name": vehicle_name,
-                        "is_idle": True,
-                        "idle_reason": final_idle_reason,
-                        "idle_notes": idle_notes,
-                        "project_site": "N/A - Vehicle Idle",
-                        "driver": "N/A",
-                        "diesel_cost": idle_diesel,
-                        "work_description": f"Vehicle Idle - {final_idle_reason}",
-                        "work_amount": 0,
-                        "payment_received": 0,
-                        "has_maintenance": "Yes" if idle_maintenance > 0 else "No",
-                        "maintenance_summary": f"Idle day maintenance: ₹{idle_maintenance:,.2f}" if idle_maintenance > 0 else "",
-                        "total_maintenance_cost": idle_maintenance,
-                        "driver_payment": 0,
-                        "driver_name_payment": "N/A"
-                    })
             
             else:
                 # Working vehicle fields
@@ -414,117 +389,26 @@ with st.form("multi_vehicle_log_form", clear_on_submit=True):
                     help="Pre-filled with default driver"
                 )
                 
-                # Project (with default pre-fill)
+                # Project (auto-populated with default)
                 st.markdown("**🏗️ Project Site**")
+                vehicle_project = st.text_input(
+                    "Project",
+                    value=default_project if default_project else "",
+                    key=f"project_{idx}",
+                    placeholder="Enter project name (or use default above)",
+                    label_visibility="collapsed"
+                )
                 
-                if default_project:
-                    # Show override option only if default exists
-                    project_override = st.checkbox(
-                        f"Override default ({default_project})",
-                        key=f"project_override_{idx}",
-                        value=False,
-                        help="Check to use a different project for this vehicle"
-                    )
-                    
-                    if project_override:
-                        # User wants different project
-                        if existing_projects:
-                            project_type = st.radio(
-                                "Project type",
-                                options=["Select existing", "Enter new"],
-                                horizontal=True,
-                                key=f"project_type_{idx}",
-                                label_visibility="collapsed"
-                            )
-                            
-                            if project_type == "Select existing":
-                                vehicle_project = st.selectbox(
-                                    "Project",
-                                    options=[""] + existing_projects,
-                                    key=f"project_{idx}",
-                                    label_visibility="collapsed"
-                                )
-                            else:
-                                vehicle_project = st.text_input(
-                                    "Project",
-                                    key=f"project_new_{idx}",
-                                    placeholder="Enter project name",
-                                    label_visibility="collapsed"
-                                )
-                        else:
-                            vehicle_project = st.text_input(
-                                "Project Site",
-                                key=f"project_{idx}",
-                                placeholder="Enter project name"
-                            )
-                    else:
-                        # Use default
-                        st.info(f"✅ Using default project")
-                        vehicle_project = default_project
-                else:
-                    # No default, always show input
-                    if existing_projects:
-                        project_type = st.radio(
-                            "Project type",
-                            options=["Select existing", "Enter new"],
-                            horizontal=True,
-                            key=f"project_type_{idx}",
-                            label_visibility="collapsed"
-                        )
-                        
-                        if project_type == "Select existing":
-                            vehicle_project = st.selectbox(
-                                "Project",
-                                options=[""] + existing_projects,
-                                key=f"project_{idx}",
-                                label_visibility="collapsed"
-                            )
-                        else:
-                            vehicle_project = st.text_input(
-                                "Project",
-                                key=f"project_new_{idx}",
-                                placeholder="Enter project name",
-                                label_visibility="collapsed"
-                            )
-                    else:
-                        vehicle_project = st.text_input(
-                            "Project Site",
-                            key=f"project_{idx}",
-                            placeholder="Enter project name"
-                        )
-                
-                # Description (with default pre-fill)
+                # Description (auto-populated with default)
                 st.markdown("**📝 Work Description**")
-                
-                if default_description:
-                    # Show override option only if default exists
-                    description_override = st.checkbox(
-                        "Override default description",
-                        key=f"description_override_{idx}",
-                        value=False,
-                        help="Check to use a different description for this vehicle"
-                    )
-                    
-                    if description_override:
-                        vehicle_description = st.text_area(
-                            "Description",
-                            key=f"description_{idx}",
-                            placeholder="Describe work performed...",
-                            height=100,
-                            label_visibility="collapsed"
-                        )
-                    else:
-                        st.info(f"✅ Using default description")
-                        vehicle_description = default_description
-                else:
-                    # No default, always show input
-                    vehicle_description = st.text_area(
-                        "Description",
-                        key=f"description_{idx}",
-                        placeholder="Describe work performed...",
-                        height=100,
-                        label_visibility="collapsed"
-                    )
+                vehicle_description = st.text_area(
+                    "Description",
+                    value=default_description if default_description else "",
+                    key=f"description_{idx}",
+                    placeholder="Describe work performed (or use default above)",
+                    height=100,
+                    label_visibility="collapsed"
+                )
                 
                 # Costs
                 st.markdown("**💰 Costs**")
@@ -543,7 +427,7 @@ with st.form("multi_vehicle_log_form", clear_on_submit=True):
                         min_value=0.0,
                         step=100.0,
                         key=f"work_amount_{idx}",
-                        help="Auto-creates entry when filled"
+                        help="Entry created when this is filled"
                     )
                 
                 with col2:
@@ -559,70 +443,133 @@ with st.form("multi_vehicle_log_form", clear_on_submit=True):
                         min_value=0.0,
                         step=100.0,
                         key=f"maintenance_total_{idx}",
-                        help="Quick entry - or expand below for details"
+                        help="Enter amount to show breakdown fields below"
                     )
                 
-                # Expandable detailed maintenance
-                # Initialize variables before conditional to avoid NameError
-                maintenance_summary = ""
-                maintenance_items = []
-                
+                # Show maintenance breakdown ONLY when maintenance_total > 0
                 if maintenance_total > 0:
-                    with st.expander("🔧 Maintenance Breakdown (Optional)", expanded=False):
-                        st.caption("Break down the ₹{:,.2f} maintenance cost by type".format(maintenance_total))
+                    st.markdown("**🔧 Maintenance Breakdown**")
+                    st.caption("Select applicable maintenance types:")
+                    
+                    selected_maintenance = st.multiselect(
+                        "Maintenance Types",
+                        options=MAINTENANCE_TYPES,
+                        key=f"maintenance_types_{idx}",
+                        label_visibility="collapsed"
+                    )
+                    
+                    maintenance_items = []
+                    
+                    if selected_maintenance:
+                        st.markdown("**Enter cost for each type:**")
                         
-                        selected_maintenance = st.multiselect(
-                            "Maintenance Types",
-                            options=MAINTENANCE_TYPES,
-                            key=f"maintenance_types_{idx}"
-                        )
-                        
-                        maintenance_costs = {}
-                        
-                        if selected_maintenance:
-                            st.markdown("**Enter cost for each:**")
-                            cols_per_row = 2
-                            for i in range(0, len(selected_maintenance), cols_per_row):
-                                cols = st.columns(cols_per_row)
-                                
-                                for j, col in enumerate(cols):
-                                    idx_m = i + j
-                                    if idx_m < len(selected_maintenance):
-                                        mtype = selected_maintenance[idx_m]
-                                        
-                                        with col:
-                                            if mtype == "Other":
-                                                other_desc = st.text_input(
-                                                    "Specify",
-                                                    key=f"other_desc_{idx}_{idx_m}",
-                                                    placeholder="e.g., Tire replacement"
-                                                )
-                                                cost = st.number_input(
-                                                    f"Cost (₹)",
-                                                    min_value=0.0,
-                                                    step=100.0,
-                                                    key=f"cost_other_{idx}_{idx_m}"
-                                                )
-                                                if cost > 0 and other_desc:
-                                                    maintenance_costs[other_desc] = cost
-                                                    maintenance_items.append(f"{other_desc}: ₹{cost:,.2f}")
-                                            else:
-                                                cost = st.number_input(
-                                                    f"{mtype} (₹)",
-                                                    min_value=0.0,
-                                                    step=100.0,
-                                                    key=f"cost_{idx}_{mtype.replace(' ', '_')}"
-                                                )
-                                                if cost > 0:
-                                                    maintenance_costs[mtype] = cost
-                                                    maintenance_items.append(f"{mtype}: ₹{cost:,.2f}")
-                        
-                        maintenance_summary = "; ".join(maintenance_items) if maintenance_items else f"Maintenance: ₹{maintenance_total:,.2f}"
+                        for mtype in selected_maintenance:
+                            col_m = st.columns([3, 2])[0]
+                            with col_m:
+                                if mtype == "Other":
+                                    other_desc = st.text_input(
+                                        "Specify Other Maintenance",
+                                        key=f"other_desc_{idx}",
+                                        placeholder="e.g., Tire replacement"
+                                    )
+                                    cost = st.number_input(
+                                        f"Cost (₹)",
+                                        min_value=0.0,
+                                        step=100.0,
+                                        key=f"cost_other_{idx}"
+                                    )
+                                    if cost > 0 and other_desc:
+                                        maintenance_items.append(f"{other_desc}: ₹{cost:,.2f}")
+                                else:
+                                    cost = st.number_input(
+                                        f"{mtype} Cost (₹)",
+                                        min_value=0.0,
+                                        step=100.0,
+                                        key=f"cost_{mtype.replace(' ', '_')}_{idx}"
+                                    )
+                                    if cost > 0:
+                                        maintenance_items.append(f"{mtype}: ₹{cost:,.2f}")
+    
+    st.divider()
+    
+    # Simple submit button
+    submitted = st.form_submit_button(
+        "💾 Submit All Entries",
+        use_container_width=True,
+        type="primary"
+    )
+    
+    # Process form submission
+    if submitted:
+        vehicle_entries = []
+        
+        # Collect data from all vehicles
+        for idx, vehicle in enumerate(master_vehicles):
+            vehicle_name = vehicle["name"]
+            
+            # Check if vehicle was marked idle
+            vehicle_idle = st.session_state.get(f"idle_{idx}", False)
+            
+            if vehicle_idle:
+                # Idle vehicle
+                idle_reason = st.session_state.get(f"idle_reason_{idx}", "")
                 
-                # If no maintenance, summary already initialized to ""
+                if idle_reason:  # Only if reason selected
+                    idle_reason_other = st.session_state.get(f"idle_reason_other_{idx}", "")
+                    final_idle_reason = idle_reason_other if idle_reason == "Other" else idle_reason
+                    idle_notes = st.session_state.get(f"idle_notes_{idx}", "")
+                    idle_diesel = st.session_state.get(f"idle_diesel_{idx}", 0)
+                    idle_maintenance = st.session_state.get(f"idle_maintenance_{idx}", 0)
+                    
+                    vehicle_entries.append({
+                        "vehicle_name": vehicle_name,
+                        "is_idle": True,
+                        "idle_reason": final_idle_reason,
+                        "idle_notes": idle_notes,
+                        "project_site": "N/A - Vehicle Idle",
+                        "driver": "N/A",
+                        "diesel_cost": idle_diesel,
+                        "work_description": f"Vehicle Idle - {final_idle_reason}",
+                        "work_amount": 0,
+                        "payment_received": 0,
+                        "has_maintenance": "Yes" if idle_maintenance > 0 else "No",
+                        "maintenance_summary": f"Idle day maintenance: ₹{idle_maintenance:,.2f}" if idle_maintenance > 0 else "",
+                        "total_maintenance_cost": idle_maintenance,
+                        "driver_payment": 0,
+                        "driver_name_payment": "N/A"
+                    })
+            else:
+                # Working vehicle
+                work_amount = st.session_state.get(f"work_amount_{idx}", 0)
                 
-                # Validation: Create entry if work_amount > 0
-                if work_amount > 0:
+                if work_amount > 0:  # Only if work amount filled
+                    driver = st.session_state.get(f"driver_{idx}", "")
+                    vehicle_project = st.session_state.get(f"project_{idx}", "")
+                    vehicle_description = st.session_state.get(f"description_{idx}", "")
+                    diesel_cost = st.session_state.get(f"diesel_{idx}", 0)
+                    payment_received = st.session_state.get(f"payment_{idx}", 0)
+                    maintenance_total = st.session_state.get(f"maintenance_total_{idx}", 0)
+                    
+                    # Build maintenance summary
+                    maintenance_summary = ""
+                    if maintenance_total > 0:
+                        selected_types = st.session_state.get(f"maintenance_types_{idx}", [])
+                        if selected_types:
+                            items = []
+                            for mtype in selected_types:
+                                if mtype == "Other":
+                                    other_desc = st.session_state.get(f"other_desc_{idx}", "")
+                                    cost = st.session_state.get(f"cost_other_{idx}", 0)
+                                    if cost > 0 and other_desc:
+                                        items.append(f"{other_desc}: ₹{cost:,.2f}")
+                                else:
+                                    cost = st.session_state.get(f"cost_{mtype.replace(' ', '_')}_{idx}", 0)
+                                    if cost > 0:
+                                        items.append(f"{mtype}: ₹{cost:,.2f}")
+                            maintenance_summary = "; ".join(items) if items else f"Maintenance: ₹{maintenance_total:,.2f}"
+                        else:
+                            maintenance_summary = f"Maintenance: ₹{maintenance_total:,.2f}"
+                    
                     vehicle_entries.append({
                         "vehicle_name": vehicle_name,
                         "is_idle": False,
@@ -637,45 +584,13 @@ with st.form("multi_vehicle_log_form", clear_on_submit=True):
                         "has_maintenance": "Yes" if maintenance_total > 0 else "No",
                         "maintenance_summary": maintenance_summary,
                         "total_maintenance_cost": maintenance_total,
-                        "driver_payment": 0,  # Can add later if needed
+                        "driver_payment": 0,
                         "driver_name_payment": "N/A"
                     })
-    
-    st.divider()
-    
-    # Summary before submit
-    if vehicle_entries:
-        with st.container():
-            st.markdown("### 📊 Summary")
-            
-            working_count = sum(1 for v in vehicle_entries if not v.get("is_idle"))
-            idle_count = sum(1 for v in vehicle_entries if v.get("is_idle"))
-            
-            col_sum1, col_sum2, col_sum3 = st.columns(3)
-            with col_sum1:
-                st.metric("Working Vehicles", working_count)
-            with col_sum2:
-                st.metric("Idle Vehicles", idle_count)
-            with col_sum3:
-                st.metric("Total Entries", len(vehicle_entries))
-            
-            # Show list of vehicles
-            st.markdown("**Vehicles to be logged:**")
-            for v in vehicle_entries:
-                status = "🛑 Idle" if v.get("is_idle") else "✅ Working"
-                st.markdown(f"• {status} - {v['vehicle_name']}")
-    
-    # Submit button
-    submitted = st.form_submit_button(
-        f"💾 Submit All Entries ({len(vehicle_entries)} entries)" if vehicle_entries else "💾 Submit (No entries to save)",
-        use_container_width=True,
-        type="primary",
-        disabled=len(vehicle_entries) == 0
-    )
-    
-    if submitted:
+        
+        # Now save all entries
         if len(vehicle_entries) == 0:
-            st.warning("⚠️ No entries to save. Fill at least one vehicle's work amount or mark as idle.")
+            st.warning("⚠️ No entries to save. Please fill at least one vehicle's work amount or mark as idle with a reason.")
         else:
             success_count = 0
             failed_count = 0
@@ -689,6 +604,13 @@ with st.form("multi_vehicle_log_form", clear_on_submit=True):
             
             if success_count > 0:
                 st.success(f"✅ Successfully saved {success_count} entries!")
+                
+                # Show summary
+                working_count = sum(1 for v in vehicle_entries if not v.get("is_idle"))
+                idle_count = sum(1 for v in vehicle_entries if v.get("is_idle"))
+                
+                st.info(f"📊 Summary: {working_count} working vehicles, {idle_count} idle vehicles")
+                
                 st.balloons()
             
             if failed_count > 0:
@@ -711,6 +633,6 @@ with col_footer2:
 st.markdown("""
 <div style='text-align: center; color: gray; padding: 20px;'>
     <small>Vinaysa Infra Daily Log Book | Multi-Vehicle Entry System<br>
-    Master data auto-refreshes every 5 minutes</small>
+    Fill work amount > 0 or mark idle to create entry</small>
 </div>
 """, unsafe_allow_html=True)
